@@ -84,8 +84,11 @@ jobs:
 
       - name: Open cycle
         if: steps.config.outputs.action == 'open-cycle'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
           script: |
             const release = '${{ steps.config.outputs.release }}';
             const displayMonth = '${{ steps.config.outputs.display_month }}';
@@ -128,7 +131,84 @@ jobs:
               console.log(`Created label: ${releaseLabel}`);
             }
 
-            // 2. File tracking meta-issue
+            // 2. Add Release field option to project board
+            const releaseOptionName = `${release} (${displayMonth})`;
+            const projectQuery = `
+              query($org: String!) {
+                organization(login: $org) {
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      fields(first: 30) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options { id name }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+            const projResult = await github.graphql(projectQuery, { org: '${{ env.ORG }}' });
+            const proj = projResult.organization.projectsV2.nodes
+              .find(p => p.title === '${{ env.PROJECT_TITLE }}');
+
+            if (proj) {
+              const releaseField = proj.fields.nodes.find(f => f.name === 'Release');
+              if (releaseField) {
+                const existing = releaseField.options.find(o => o.name === releaseOptionName);
+                if (existing) {
+                  console.log(`Release option "${releaseOptionName}" already exists`);
+                } else {
+                  const addOptionMutation = `
+                    mutation($projectId: ID!, $fieldId: ID!, $value: ProjectV2SingleSelectFieldOptionInput!) {
+                      updateProjectV2Field(input: {
+                        projectId: $projectId
+                        fieldId: $fieldId
+                        singleSelectOptions: [$value]
+                      }) {
+                        projectV2Field { ... on ProjectV2SingleSelectField { id } }
+                      }
+                    }
+                  `;
+
+                  // Preserve existing options and append new one
+                  const existingOptions = releaseField.options.map(o => ({
+                    name: o.name,
+                    description: '',
+                    color: 'GREEN',
+                  }));
+                  existingOptions.push({
+                    name: releaseOptionName,
+                    description: `${release} release (${displayMonth})`,
+                    color: 'GREEN',
+                  });
+
+                  await github.graphql(`
+                    mutation($projectId: ID!, $fieldId: ID!) {
+                      updateProjectV2Field(input: {
+                        projectId: $projectId
+                        fieldId: $fieldId
+                        singleSelectOptions: [${existingOptions.map(o =>
+                          `{name: ${JSON.stringify(o.name)}, description: ${JSON.stringify(o.description)}, color: GREEN}`
+                        ).join(', ')}]
+                      }) {
+                        projectV2Field { ... on ProjectV2SingleSelectField { id } }
+                      }
+                    }
+                  `, { projectId: proj.id, fieldId: releaseField.id });
+
+                  console.log(`Added Release option: ${releaseOptionName}`);
+                }
+              }
+            }
+
+            // 3. File tracking meta-issue
             const templateBaseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/new?template=release-readiness.yml`;
 
             let checklist = '## Repo Checklist\n\n';
