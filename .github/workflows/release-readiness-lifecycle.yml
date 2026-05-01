@@ -1,0 +1,340 @@
+name: Release Readiness — Lifecycle
+
+on:
+  schedule:
+    - cron: "0 12 25 * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Lifecycle action to run"
+        required: true
+        type: choice
+        options:
+          - open-cycle
+          - status-report
+          - close-cycle
+      release_version:
+        description: "Release version override (e.g., v0.8). Defaults to next month's release."
+        required: false
+        type: string
+
+env:
+  PROJECT_TITLE: "llm-d Release Readiness"
+  ORG: "llm-d"
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Determine release version and action
+        id: config
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let action = '${{ github.event.inputs.action }}' || 'open-cycle';
+            let release = '${{ github.event.inputs.release_version }}';
+
+            if (!release) {
+              // Auto-compute: on the 25th, open next month's release
+              // Base: v0.7 = May 2026
+              const now = new Date();
+              const BASE_YEAR = 2026;
+              const BASE_MONTH = 5;
+              const BASE_MINOR = 7;
+              const nextMonth = now.getMonth() + 2; // getMonth() is 0-indexed, +1 for next month, +1 for 1-indexed
+              const nextYear = now.getFullYear() + (nextMonth > 12 ? 1 : 0);
+              const normalizedMonth = ((nextMonth - 1) % 12) + 1;
+              const monthsFromBase = (nextYear - BASE_YEAR) * 12 + normalizedMonth - BASE_MONTH;
+              const minor = BASE_MINOR + monthsFromBase;
+              release = `v0.${minor}`;
+            }
+
+            core.setOutput('action', action);
+            core.setOutput('release', release);
+
+            // Compute display month for the release
+            const minor = parseInt(release.split('.')[1], 10);
+            const BASE_MINOR = 7;
+            const BASE_MONTH = 5;
+            const BASE_YEAR = 2026;
+            const monthOffset = minor - BASE_MINOR;
+            const targetMonth = BASE_MONTH + monthOffset;
+            const targetYear = BASE_YEAR + Math.floor((targetMonth - 1) / 12);
+            const targetMonthNorm = ((targetMonth - 1) % 12) + 1;
+            const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                           'July', 'August', 'September', 'October', 'November', 'December'];
+            const displayMonth = `${months[targetMonthNorm]} ${targetYear}`;
+
+            core.setOutput('display_month', displayMonth);
+            core.setOutput('target_date', `${targetYear}-${String(targetMonthNorm).padStart(2, '0')}-01`);
+
+            console.log(`Action: ${action}, Release: ${release}, Month: ${displayMonth}`);
+
+      - name: Open cycle
+        if: steps.config.outputs.action == 'open-cycle'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = '${{ steps.config.outputs.release }}';
+            const displayMonth = '${{ steps.config.outputs.display_month }}';
+
+            // All shipping repos (excludes llm-d-infra, .github, docs — internal only)
+            const PRODUCTION_REPOS = [
+              'llm-d', 'llm-d-benchmark', 'llm-d-inference-payload-processor',
+              'llm-d-inference-scheduler', 'llm-d-inference-sim', 'llm-d-kv-cache',
+              'llm-d-latency-predictor', 'llm-d-model-service', 'llm-d-pd-utils',
+              'llm-d-prism', 'llm-d-routing-sidecar', 'llm-d-workload-variant-autoscaler',
+            ];
+
+            const INCUBATION_REPOS = [
+              'batch-gateway', 'coordinator', 'hermes', 'ig-wva',
+              'llm-d-async', 'llm-d-fast-model-actuation', 'llm-d-modelservice',
+              'llm-d-planner', 'llm-d-resiliency-operator', 'llm-d-rl',
+              'llm-d-skills', 'py-inference-scheduler', 'secure-inference',
+              'weight-propagation-interface',
+            ];
+
+            const ALL_REPOS = [...PRODUCTION_REPOS, ...INCUBATION_REPOS];
+
+            // 1. Create release label
+            const releaseLabel = `release/${release}`;
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: releaseLabel,
+              });
+              console.log(`Label ${releaseLabel} already exists`);
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: releaseLabel,
+                color: '0E8A16',
+                description: `${release} release (${displayMonth})`,
+              });
+              console.log(`Created label: ${releaseLabel}`);
+            }
+
+            // 2. File tracking meta-issue
+            const templateBaseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/new?template=release-readiness.yml`;
+
+            let checklist = '## Repo Checklist\n\n';
+            checklist += '### Production\n\n';
+            for (const repo of PRODUCTION_REPOS) {
+              const prefillUrl = `${templateBaseUrl}&title=${encodeURIComponent(`[Release Readiness] ${repo} — ${release}`)}&labels=release-readiness`;
+              checklist += `- [ ] **${repo}** — [File readiness issue](${prefillUrl})\n`;
+            }
+            checklist += '\n### Incubation\n\n';
+            for (const repo of INCUBATION_REPOS) {
+              const prefillUrl = `${templateBaseUrl}&title=${encodeURIComponent(`[Release Readiness] ${repo} — ${release}`)}&labels=release-readiness`;
+              checklist += `- [ ] **${repo}** — [File readiness issue](${prefillUrl})\n`;
+            }
+
+            const trackingBody = `# Release Tracking: ${release} — ${displayMonth}
+
+            **Release date**: ${displayMonth} 1st
+            **Total repos**: ${ALL_REPOS.length} (${PRODUCTION_REPOS.length} production + ${INCUBATION_REPOS.length} incubation)
+
+            ## Status Summary
+
+            | Status | Count |
+            |---|---|
+            | Validated | 0 |
+            | Passing | 0 |
+            | Filed | 0 |
+            | Blocked | 0 |
+            | Not filed | ${ALL_REPOS.length} |
+
+            ${checklist}
+
+            ---
+            _This issue is auto-generated by the release readiness lifecycle workflow._
+            _Use \`/revalidate\` on individual readiness issues to re-run checks._
+            _Run the lifecycle workflow with \`status-report\` action for an updated summary._
+            `.replace(/^            /gm, '');
+
+            const trackingIssue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Release Tracking] ${release} — ${displayMonth}`,
+              body: trackingBody,
+              labels: ['release-readiness', releaseLabel],
+            });
+
+            console.log(`Created tracking issue: #${trackingIssue.data.number}`);
+
+      - name: Status report
+        if: steps.config.outputs.action == 'status-report'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = '${{ steps.config.outputs.release }}';
+            const releaseLabel = `release/${release}`;
+
+            // Find all readiness issues for this release
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              labels: `release-readiness,${releaseLabel}`,
+              per_page: 100,
+            });
+
+            // Filter out tracking issues
+            const readinessIssues = issues.data.filter(i =>
+              !i.title.startsWith('[Release Tracking]')
+            );
+
+            const statusCounts = {
+              validated: 0,
+              passing: 0,
+              failing: 0,
+              validating: 0,
+              filed: 0,
+              blocked: 0,
+              released: 0,
+            };
+
+            const issueDetails = [];
+
+            for (const issue of readinessIssues) {
+              const labels = issue.labels.map(l => l.name);
+              let status = 'filed';
+              for (const [label, s] of Object.entries({
+                'readiness/filed': 'filed',
+                'readiness/validating': 'validating',
+                'readiness/passing': 'passing',
+                'readiness/failing': 'failing',
+                'readiness/blocked': 'blocked',
+                'readiness/validated': 'validated',
+                'readiness/released': 'released',
+              })) {
+                if (labels.includes(label)) status = s;
+              }
+              statusCounts[status]++;
+
+              // Parse repo name from title
+              const repoMatch = issue.title.match(/\[Release Readiness\]\s*(.+?)\s*—/);
+              const repoName = repoMatch ? repoMatch[1] : 'Unknown';
+
+              const icon = {
+                validated: '✅', passing: '🟢', failing: '🔴',
+                validating: '🔄', filed: '📋', blocked: '🚫', released: '🏁',
+              }[status] || '❓';
+
+              issueDetails.push(`| ${icon} ${repoName} | ${status} | #${issue.number} |`);
+            }
+
+            const TOTAL_REPOS = 26;
+            const notFiled = TOTAL_REPOS - readinessIssues.length;
+
+            let report = `## ${release} Release Status Report\n\n`;
+            report += `**Generated**: ${new Date().toISOString().split('T')[0]}\n\n`;
+            report += `| Status | Count |\n|---|---|\n`;
+            report += `| ✅ Validated | ${statusCounts.validated} |\n`;
+            report += `| 🟢 Passing | ${statusCounts.passing} |\n`;
+            report += `| 🔴 Failing | ${statusCounts.failing} |\n`;
+            report += `| 🚫 Blocked | ${statusCounts.blocked} |\n`;
+            report += `| 📋 Filed | ${statusCounts.filed + statusCounts.validating} |\n`;
+            report += `| ⬜ Not filed | ${notFiled} |\n`;
+            report += `| 🏁 Released | ${statusCounts.released} |\n\n`;
+
+            if (issueDetails.length > 0) {
+              report += `### Per-Repo Detail\n\n`;
+              report += `| Repo | Status | Issue |\n|---|---|---|\n`;
+              report += issueDetails.join('\n') + '\n';
+            }
+
+            // Find the tracking issue to comment on
+            const trackingIssues = issues.data.filter(i =>
+              i.title.startsWith('[Release Tracking]') && i.state === 'open'
+            );
+
+            if (trackingIssues.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: trackingIssues[0].number,
+                body: report,
+              });
+              console.log(`Posted report to tracking issue #${trackingIssues[0].number}`);
+            } else {
+              console.log('No open tracking issue found for this release');
+              core.setOutput('report', report);
+            }
+
+      - name: Close cycle
+        if: steps.config.outputs.action == 'close-cycle'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = '${{ steps.config.outputs.release }}';
+            const releaseLabel = `release/${release}`;
+
+            // Find all readiness issues for this release
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: `release-readiness,${releaseLabel}`,
+              per_page: 100,
+            });
+
+            // Ensure released label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'readiness/released',
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'readiness/released',
+                color: '6F42C1',
+                description: 'Included in final release',
+              });
+            }
+
+            let closedCount = 0;
+            for (const issue of issues.data) {
+              // Add released label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['readiness/released'],
+              });
+
+              // Close the issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              closedCount++;
+            }
+
+            // Find and close the tracking issue with a summary
+            const trackingIssues = issues.data.filter(i =>
+              i.title.startsWith('[Release Tracking]')
+            );
+
+            for (const tracking of trackingIssues) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: tracking.number,
+                body: `## ${release} Release Cycle Closed\n\n` +
+                  `${closedCount} readiness issues closed and labeled \`readiness/released\`.\n` +
+                  `Release date: ${{ steps.config.outputs.target_date }}`,
+              });
+            }
+
+            console.log(`Closed ${closedCount} issues for ${release}`);

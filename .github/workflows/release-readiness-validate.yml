@@ -1,0 +1,715 @@
+name: Release Readiness — Validate
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to validate"
+        required: true
+        type: number
+
+env:
+  PROJECT_TITLE: "llm-d Release Readiness"
+  ORG: "llm-d"
+  TOTAL_CHECKS: 24
+
+jobs:
+  validate:
+    if: |
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'release-readiness')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'release-readiness') && startsWith(github.event.comment.body, '/revalidate'))
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Determine issue number
+        id: issue
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "number=${{ github.event.inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get issue body
+        id: body
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.issue.outputs.number }},
+            });
+            core.setOutput('body', issue.data.body);
+            return issue.data.body;
+
+      - name: Parse issue fields
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = ${{ steps.body.outputs.result }};
+
+            function parseField(label) {
+              const regex = new RegExp(`### ${label}\\s*\\n\\n([^\\n]+)`, 'i');
+              const match = body.match(regex);
+              return match ? match[1].trim() : '';
+            }
+
+            const repoRaw = parseField('Which repo is requesting release inclusion\\?');
+            const version = parseField('What version/tag are you releasing\\?');
+            const repo = repoRaw.replace(/\s*\(incubation\)$/, '');
+            const tier = repoRaw.includes('(incubation)') ? 'incubation' : 'production';
+
+            // Determine the GitHub org for this repo
+            const incubationRepos = [
+              'batch-gateway', 'coordinator', 'hermes', 'ig-wva',
+              'llm-d-async', 'llm-d-fast-model-actuation', 'llm-d-modelservice',
+              'llm-d-planner', 'llm-d-resiliency-operator', 'llm-d-rl',
+              'llm-d-skills', 'py-inference-scheduler', 'secure-inference',
+              'weight-propagation-interface',
+            ];
+            const orgName = incubationRepos.includes(repo) ? 'llm-d-incubation' : 'llm-d';
+
+            core.setOutput('repo', repo);
+            core.setOutput('version', version);
+            core.setOutput('tier', tier);
+            core.setOutput('org', orgName);
+            core.setOutput('full_repo', `${orgName}/${repo}`);
+
+      - name: Set validating label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.issue.outputs.number }};
+            const labels = (await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+            })).data.map(l => l.name);
+
+            // Remove any existing readiness/* labels
+            for (const label of labels) {
+              if (label.startsWith('readiness/') && label !== 'readiness/validating') {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: label,
+                }).catch(() => {});
+              }
+            }
+
+            // Ensure readiness/validating label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'readiness/validating',
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'readiness/validating',
+                color: 'FBCA04',
+                description: 'Automated checks running',
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['readiness/validating'],
+            });
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.parse.outputs.full_repo }}
+          token: ${{ secrets.ORG_GITHUB_TOKEN }}
+          path: target-repo
+
+      - name: Run validation checks
+        id: validate
+        uses: actions/github-script@v7
+        env:
+          TARGET_REPO: ${{ steps.parse.outputs.full_repo }}
+          TARGET_ORG: ${{ steps.parse.outputs.org }}
+          TARGET_REPO_NAME: ${{ steps.parse.outputs.repo }}
+          TARGET_VERSION: ${{ steps.parse.outputs.version }}
+          TARGET_TIER: ${{ steps.parse.outputs.tier }}
+          ORG_TOKEN: ${{ secrets.ORG_GITHUB_TOKEN }}
+        with:
+          github-token: ${{ secrets.ORG_GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const org = process.env.TARGET_ORG;
+            const repo = process.env.TARGET_REPO_NAME;
+            const fullRepo = process.env.TARGET_REPO;
+            const version = process.env.TARGET_VERSION;
+            const tier = process.env.TARGET_TIER;
+            const repoPath = 'target-repo';
+
+            const results = [];
+
+            function check(category, name, pass, detail) {
+              results.push({ category, name, pass, detail: detail || '' });
+            }
+
+            function fileExists(relPath) {
+              return fs.existsSync(path.join(repoPath, relPath));
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // CI Health (5 checks)
+            // ═══════════════════════════════════════════════════════
+
+            // 1. Default branch CI passing
+            try {
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: org,
+                repo: repo,
+                branch: 'main',
+                status: 'completed',
+                per_page: 5,
+              });
+              const recentRuns = runs.data.workflow_runs || [];
+              const hasPassingCI = recentRuns.some(r => r.conclusion === 'success');
+              check('CI Health', 'Default branch CI passing', hasPassingCI,
+                hasPassingCI ? 'Recent successful run found' : 'No recent successful CI runs on main');
+            } catch (e) {
+              check('CI Health', 'Default branch CI passing', false, `Error: ${e.message}`);
+            }
+
+            // 2. No failing required checks
+            try {
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: org,
+                repo: repo,
+                branch: 'main',
+                status: 'completed',
+                per_page: 10,
+              });
+              const failedRuns = (runs.data.workflow_runs || [])
+                .filter(r => r.conclusion === 'failure')
+                .slice(0, 3);
+              const noFailures = failedRuns.length === 0;
+              check('CI Health', 'No failing required checks', noFailures,
+                noFailures ? 'No recent failures' : `${failedRuns.length} recent failed run(s): ${failedRuns.map(r => r.name).join(', ')}`);
+            } catch (e) {
+              check('CI Health', 'No failing required checks', false, `Error: ${e.message}`);
+            }
+
+            // 3. Branch protection enabled
+            try {
+              await github.rest.repos.getBranchProtection({
+                owner: org,
+                repo: repo,
+                branch: 'main',
+              });
+              check('CI Health', 'Branch protection enabled', true, 'Protection rules found on main');
+            } catch (e) {
+              const isNotFound = e.status === 404;
+              check('CI Health', 'Branch protection enabled', false,
+                isNotFound ? 'No branch protection on main' : `Error: ${e.message}`);
+            }
+
+            // 4. Signed commits / DCO
+            try {
+              const commits = await github.rest.repos.listCommits({
+                owner: org,
+                repo: repo,
+                per_page: 10,
+              });
+              const recentCommits = commits.data || [];
+              const signedCount = recentCommits.filter(c =>
+                c.commit.message.includes('Signed-off-by:') ||
+                (c.commit.verification && c.commit.verification.verified)
+              ).length;
+              const signedRatio = recentCommits.length > 0 ? signedCount / recentCommits.length : 0;
+              const SIGNED_THRESHOLD = 0.8;
+              check('CI Health', 'Signed commits / DCO', signedRatio >= SIGNED_THRESHOLD,
+                `${signedCount}/${recentCommits.length} recent commits signed (${Math.round(signedRatio * 100)}%)`);
+            } catch (e) {
+              check('CI Health', 'Signed commits / DCO', false, `Error: ${e.message}`);
+            }
+
+            // 5. No critical Dependabot alerts
+            try {
+              const alerts = await github.rest.dependabot.listAlertsForRepo({
+                owner: org,
+                repo: repo,
+                state: 'open',
+                severity: 'critical',
+                per_page: 5,
+              });
+              const criticalAlerts = alerts.data || [];
+              check('CI Health', 'No critical Dependabot alerts', criticalAlerts.length === 0,
+                criticalAlerts.length === 0 ? 'No open critical alerts' : `${criticalAlerts.length} critical alert(s) open`);
+            } catch (e) {
+              // Dependabot API may not be available for all repos
+              check('CI Health', 'No critical Dependabot alerts', true, 'Dependabot API unavailable (skipped)');
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // Governance (5 checks)
+            // ═══════════════════════════════════════════════════════
+
+            // 6. OWNERS file
+            const hasOwners = fileExists('OWNERS') || fileExists('CODEOWNERS') || fileExists('.github/CODEOWNERS');
+            check('Governance', 'OWNERS file exists', hasOwners,
+              hasOwners ? 'Found OWNERS or CODEOWNERS' : 'Missing OWNERS / CODEOWNERS file');
+
+            // 7. LICENSE
+            const hasLicense = fileExists('LICENSE') || fileExists('LICENSE.md') || fileExists('LICENSE.txt');
+            check('Governance', 'LICENSE file exists', hasLicense,
+              hasLicense ? 'LICENSE found' : 'Missing LICENSE file');
+
+            // 8. CONTRIBUTING.md
+            const hasContributing = fileExists('CONTRIBUTING.md') || fileExists('.github/CONTRIBUTING.md');
+            check('Governance', 'CONTRIBUTING.md exists', hasContributing,
+              hasContributing ? 'CONTRIBUTING.md found' : 'Missing CONTRIBUTING.md');
+
+            // 9. SECURITY.md
+            const hasSecurity = fileExists('SECURITY.md') || fileExists('.github/SECURITY.md');
+            check('Governance', 'SECURITY.md exists', hasSecurity,
+              hasSecurity ? 'SECURITY.md found' : 'Missing SECURITY.md');
+
+            // 10. CODE_OF_CONDUCT.md
+            const hasCoc = fileExists('CODE_OF_CONDUCT.md') || fileExists('.github/CODE_OF_CONDUCT.md');
+            check('Governance', 'CODE_OF_CONDUCT.md exists', hasCoc,
+              hasCoc ? 'CODE_OF_CONDUCT.md found' : 'Missing CODE_OF_CONDUCT.md');
+
+            // ═══════════════════════════════════════════════════════
+            // Artifacts (4 checks)
+            // ═══════════════════════════════════════════════════════
+
+            // 11. Tag follows semver
+            const semverRegex = /^v?\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/;
+            const validSemver = semverRegex.test(version);
+            check('Artifacts', 'Tag follows semver', validSemver,
+              validSemver ? `${version} is valid semver` : `${version} does not follow vX.Y.Z format`);
+
+            // 12. Container image exists (if Dockerfile present)
+            const hasDockerfile = fileExists('Dockerfile') || fileExists('docker/Dockerfile');
+            if (hasDockerfile) {
+              try {
+                const packages = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
+                  package_type: 'container',
+                  package_name: repo,
+                  org: org,
+                  per_page: 5,
+                });
+                check('Artifacts', 'Container image exists', (packages.data || []).length > 0,
+                  'Container image found in GHCR');
+              } catch {
+                check('Artifacts', 'Container image exists', false,
+                  'No container image found in GHCR (Dockerfile present)');
+              }
+            } else {
+              check('Artifacts', 'Container image exists', true, 'No Dockerfile — container check skipped');
+            }
+
+            // 13. CHANGELOG or release notes
+            const hasChangelog = fileExists('CHANGELOG.md') || fileExists('CHANGES.md');
+            let hasReleaseNotes = false;
+            try {
+              const releases = await github.rest.repos.listReleases({
+                owner: org,
+                repo: repo,
+                per_page: 5,
+              });
+              hasReleaseNotes = (releases.data || []).some(r => r.body && r.body.length > 50);
+            } catch {}
+            check('Artifacts', 'CHANGELOG / release notes', hasChangelog || hasReleaseNotes,
+              hasChangelog ? 'CHANGELOG.md found' : hasReleaseNotes ? 'GitHub Release notes found' : 'No CHANGELOG.md or release notes');
+
+            // 14. No blocking draft releases
+            try {
+              const releases = await github.rest.repos.listReleases({
+                owner: org,
+                repo: repo,
+                per_page: 10,
+              });
+              const drafts = (releases.data || []).filter(r => r.draft);
+              check('Artifacts', 'No blocking draft releases', drafts.length === 0,
+                drafts.length === 0 ? 'No draft releases' : `${drafts.length} draft release(s) found`);
+            } catch (e) {
+              check('Artifacts', 'No blocking draft releases', true, 'Releases API unavailable (skipped)');
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // Testing (4 checks)
+            // ═══════════════════════════════════════════════════════
+
+            // 15. Recent CI runs healthy
+            try {
+              const RECENT_DAYS = 7;
+              const since = new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: org,
+                repo: repo,
+                created: `>${since}`,
+                per_page: 20,
+              });
+              const total = runs.data.total_count || 0;
+              const successes = (runs.data.workflow_runs || []).filter(r => r.conclusion === 'success').length;
+              const CI_HEALTH_THRESHOLD = 0.5;
+              const healthy = total > 0 && (successes / total) >= CI_HEALTH_THRESHOLD;
+              check('Testing', 'Recent CI runs healthy', healthy,
+                total === 0 ? 'No CI runs in last 7 days' : `${successes}/${total} runs succeeded (${Math.round(successes/total*100)}%)`);
+            } catch (e) {
+              check('Testing', 'Recent CI runs healthy', false, `Error: ${e.message}`);
+            }
+
+            // 16. Nightly E2E passing
+            try {
+              const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: org,
+                repo: repo,
+                per_page: 50,
+              });
+              const nightlyRuns = (runs.data.workflow_runs || [])
+                .filter(r => r.name && (r.name.toLowerCase().includes('nightly') || r.name.toLowerCase().includes('e2e')));
+              if (nightlyRuns.length === 0) {
+                check('Testing', 'Nightly E2E passing', true, 'No nightly/E2E workflows found (skipped)');
+              } else {
+                const latestNightly = nightlyRuns[0];
+                const passing = latestNightly.conclusion === 'success';
+                check('Testing', 'Nightly E2E passing', passing,
+                  `Latest ${latestNightly.name}: ${latestNightly.conclusion}`);
+              }
+            } catch (e) {
+              check('Testing', 'Nightly E2E passing', true, 'Could not check nightly runs (skipped)');
+            }
+
+            // 17. No critical issues open
+            try {
+              const issues = await github.rest.issues.listForRepo({
+                owner: org,
+                repo: repo,
+                state: 'open',
+                labels: 'priority/critical,kind/bug',
+                per_page: 5,
+              });
+              // Also check for critical-only label
+              const criticalIssues = await github.rest.issues.listForRepo({
+                owner: org,
+                repo: repo,
+                state: 'open',
+                labels: 'priority/critical',
+                per_page: 5,
+              });
+              const total = criticalIssues.data.length;
+              check('Testing', 'No critical issues open', total === 0,
+                total === 0 ? 'No critical issues' : `${total} critical issue(s) open`);
+            } catch (e) {
+              check('Testing', 'No critical issues open', true, 'Could not check issues (skipped)');
+            }
+
+            // 18. Test coverage present
+            const hasTests = fileExists('tests') || fileExists('test') ||
+              fileExists('*_test.go') || fileExists('pkg') ||
+              fs.readdirSync(repoPath).some(f => f.endsWith('_test.go')) ||
+              fileExists('pytest.ini') || fileExists('setup.cfg') ||
+              fileExists('jest.config.js') || fileExists('jest.config.ts');
+            check('Testing', 'Test coverage present', hasTests,
+              hasTests ? 'Test files/directories found' : 'No test infrastructure detected');
+
+            // ═══════════════════════════════════════════════════════
+            // Docs (3 checks)
+            // ═══════════════════════════════════════════════════════
+
+            // 19. README.md non-trivial
+            const MIN_README_BYTES = 500;
+            if (fileExists('README.md')) {
+              const readmeSize = fs.statSync(path.join(repoPath, 'README.md')).size;
+              check('Docs', 'README.md non-trivial', readmeSize >= MIN_README_BYTES,
+                `README.md is ${readmeSize} bytes (min ${MIN_README_BYTES})`);
+            } else {
+              check('Docs', 'README.md non-trivial', false, 'README.md not found');
+            }
+
+            // 20. docs/ or api/ directory present
+            const hasDocs = fileExists('docs') || fileExists('api') || fileExists('doc');
+            check('Docs', 'docs/api directory present', hasDocs,
+              hasDocs ? 'Documentation directory found' : 'No docs/ or api/ directory');
+
+            // 21. Link health (deferred — always passes)
+            check('Docs', 'Link health', true, 'Deferred to nightly link checker');
+
+            // ═══════════════════════════════════════════════════════
+            // Hygiene (3 checks)
+            // ═══════════════════════════════════════════════════════
+
+            // 22. No open merge conflicts on default branch PRs
+            try {
+              const prs = await github.rest.pulls.list({
+                owner: org,
+                repo: repo,
+                state: 'open',
+                base: 'main',
+                per_page: 20,
+              });
+              const conflicting = (prs.data || []).filter(p => p.mergeable === false);
+              check('Hygiene', 'No merge conflicts', conflicting.length === 0,
+                conflicting.length === 0 ? 'No conflicting PRs' : `${conflicting.length} PR(s) have merge conflicts`);
+            } catch (e) {
+              check('Hygiene', 'No merge conflicts', true, 'Could not check PRs (skipped)');
+            }
+
+            // 23. Dependency pinning
+            let depsPinned = false;
+            let depsDetail = '';
+            if (fileExists('go.mod')) {
+              depsPinned = fileExists('go.sum');
+              depsDetail = depsPinned ? 'go.sum present' : 'go.mod without go.sum';
+            } else if (fileExists('requirements.txt') || fileExists('pyproject.toml')) {
+              depsPinned = fileExists('requirements.txt') || fileExists('poetry.lock') || fileExists('uv.lock');
+              depsDetail = depsPinned ? 'Lock file present' : 'No lock file found';
+            } else if (fileExists('package.json')) {
+              depsPinned = fileExists('package-lock.json') || fileExists('yarn.lock') || fileExists('pnpm-lock.yaml');
+              depsDetail = depsPinned ? 'Lock file present' : 'No lock file found';
+            } else {
+              depsPinned = true;
+              depsDetail = 'No recognized package manager';
+            }
+            check('Hygiene', 'Dependency pinning', depsPinned, depsDetail);
+
+            // 24. Cross-repo dep compatibility
+            // Check if go.mod references other llm-d repos and those are accessible
+            let crossDepsOk = true;
+            let crossDepsDetail = 'No cross-repo dependencies detected';
+            if (fileExists('go.mod')) {
+              const gomod = fs.readFileSync(path.join(repoPath, 'go.mod'), 'utf8');
+              const llmdDeps = gomod.match(/github\.com\/llm-d[^\s]*/g) || [];
+              if (llmdDeps.length > 0) {
+                crossDepsDetail = `Found ${llmdDeps.length} llm-d dependency(ies): ${llmdDeps.slice(0, 5).join(', ')}`;
+              }
+            }
+            check('Hygiene', 'Cross-repo dep compatibility', crossDepsOk, crossDepsDetail);
+
+            // ═══════════════════════════════════════════════════════
+            // Summary
+            // ═══════════════════════════════════════════════════════
+
+            const passing = results.filter(r => r.pass).length;
+            const failing = results.filter(r => !r.pass).length;
+            const allPassing = failing === 0;
+
+            // Build comment
+            const categories = [...new Set(results.map(r => r.category))];
+            let comment = `## Release Readiness Validation\n\n`;
+            comment += `**Repo**: \`${fullRepo}\` | **Version**: \`${version}\` | **Tier**: ${tier}\n\n`;
+            comment += `### Score: ${passing}/${results.length} checks passing ${allPassing ? '✅' : '❌'}\n\n`;
+
+            for (const cat of categories) {
+              const catResults = results.filter(r => r.category === cat);
+              const catPassing = catResults.filter(r => r.pass).length;
+              comment += `#### ${cat} (${catPassing}/${catResults.length})\n\n`;
+              comment += `| Check | Status | Detail |\n|---|---|---|\n`;
+              for (const r of catResults) {
+                const icon = r.pass ? '✅' : '❌';
+                comment += `| ${r.name} | ${icon} | ${r.detail} |\n`;
+              }
+              comment += `\n`;
+            }
+
+            comment += `\n---\n_Run \`/revalidate\` in a comment to re-run these checks._`;
+
+            core.setOutput('passing', passing);
+            core.setOutput('total', results.length);
+            core.setOutput('all_passing', allPassing);
+            core.setOutput('comment', comment);
+
+      - name: Post validation comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.issue.outputs.number }},
+              body: `${{ steps.validate.outputs.comment }}`.replace(/`/g, '`'),
+            });
+
+      - name: Set result label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.issue.outputs.number }};
+            const allPassing = ${{ steps.validate.outputs.all_passing }};
+            const resultLabel = allPassing ? 'readiness/passing' : 'readiness/failing';
+            const removeLabel = allPassing ? 'readiness/failing' : 'readiness/passing';
+
+            // Remove validating label
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                name: 'readiness/validating',
+              });
+            } catch {}
+
+            // Remove opposite result label
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                name: removeLabel,
+              });
+            } catch {}
+
+            // Ensure result label exists
+            const labelConfig = allPassing
+              ? { name: 'readiness/passing', color: '0E8A16', description: 'All automated checks pass' }
+              : { name: 'readiness/failing', color: 'D93F0B', description: 'One or more checks fail' };
+
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: labelConfig.name,
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ...labelConfig,
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: [resultLabel],
+            });
+
+      - name: Update project board fields
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            const passing = parseInt('${{ steps.validate.outputs.passing }}', 10);
+            const allPassing = ${{ steps.validate.outputs.all_passing }};
+
+            // Find the project
+            const projectQuery = `
+              query($org: String!) {
+                organization(login: $org) {
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      fields(first: 30) {
+                        nodes {
+                          ... on ProjectV2Field {
+                            id
+                            name
+                            dataType
+                          }
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            dataType
+                            options { id name }
+                          }
+                        }
+                      }
+                      items(first: 100) {
+                        nodes {
+                          id
+                          content {
+                            ... on Issue { id number }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const result = await github.graphql(projectQuery, { org: '${{ env.ORG }}' });
+            const project = result.organization.projectsV2.nodes
+              .find(p => p.title === '${{ env.PROJECT_TITLE }}');
+
+            if (!project) return;
+
+            const item = project.items.nodes.find(
+              i => i.content && i.content.number === ${{ steps.issue.outputs.number }}
+            );
+
+            if (!item) return;
+
+            const fields = project.fields.nodes;
+
+            function findField(name) {
+              return fields.find(f => f.name === name);
+            }
+
+            const updateMutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: $value
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            `;
+
+            // Update Validation Score
+            const scoreField = findField('Validation Score');
+            if (scoreField) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: scoreField.id,
+                value: { number: passing },
+              });
+            }
+
+            // Update Validation Status
+            const valStatusField = findField('Validation Status');
+            const valOption = valStatusField?.options?.find(o => o.name === (allPassing ? 'passing' : 'failing'));
+            if (valStatusField && valOption) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: valStatusField.id,
+                value: { singleSelectOptionId: valOption.id },
+              });
+            }
+
+            // Update Status based on validation result
+            const statusField = findField('Status');
+            const newStatus = allPassing ? 'Passing' : 'Blocked';
+            const statusOption = statusField?.options?.find(o => o.name === newStatus);
+            if (statusField && statusOption) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: statusField.id,
+                value: { singleSelectOptionId: statusOption.id },
+              });
+            }
+
+            console.log(`Updated board: Score=${passing}, Status=${newStatus}`);

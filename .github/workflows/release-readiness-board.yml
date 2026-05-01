@@ -1,0 +1,395 @@
+name: Release Readiness — Board Sync
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled, closed, reopened]
+
+env:
+  PROJECT_TITLE: "llm-d Release Readiness"
+  ORG: "llm-d"
+
+jobs:
+  sync-board:
+    if: contains(github.event.issue.labels.*.name, 'release-readiness')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Parse issue body
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+
+            // GitHub renders form fields as: ### Label\n\nValue\n\n
+            function parseField(label) {
+              const regex = new RegExp(`### ${label}\\s*\\n\\n([^\\n]+)`, 'i');
+              const match = body.match(regex);
+              return match ? match[1].trim() : '';
+            }
+
+            const repoRaw = parseField('Which repo is requesting release inclusion\\?');
+            const version = parseField('What version/tag are you releasing\\?');
+
+            // Strip " (incubation)" suffix to get bare repo name
+            const repo = repoRaw.replace(/\s*\(incubation\)$/, '');
+            const tier = repoRaw.includes('(incubation)') ? 'incubation' : 'production';
+
+            // Derive release from version: v0.8.0 → v0.8, v1.0.0-rc.1 → v1.0
+            const releaseMatch = version.match(/^v?(\d+\.\d+)/);
+            const release = releaseMatch ? `v${releaseMatch[1]}` : '';
+
+            core.setOutput('repo', repo);
+            core.setOutput('version', version);
+            core.setOutput('tier', tier);
+            core.setOutput('release', release);
+
+            console.log(`Parsed: repo=${repo}, version=${version}, tier=${tier}, release=${release}`);
+
+      - name: Determine status from labels
+        id: status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.issue.labels.map(l => l.name);
+            const event = context.payload.action;
+
+            // Priority order for readiness labels (last match wins)
+            const statusMap = {
+              'readiness/filed': 'Filed',
+              'readiness/validating': 'Validating',
+              'readiness/passing': 'Passing',
+              'readiness/failing': 'Blocked',
+              'readiness/blocked': 'Blocked',
+              'readiness/validated': 'Validated',
+              'readiness/released': 'Released',
+            };
+
+            let status = 'Filed';
+            for (const [label, s] of Object.entries(statusMap)) {
+              if (labels.includes(label)) {
+                status = s;
+              }
+            }
+
+            if (event === 'closed') {
+              status = 'Released';
+            }
+
+            core.setOutput('status', status);
+            console.log(`Status: ${status} (event=${event}, labels=${labels.join(', ')})`);
+
+      - name: Ensure labels exist
+        if: github.event.action == 'opened'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = '${{ steps.parse.outputs.release }}';
+            const tier = '${{ steps.parse.outputs.tier }}';
+
+            const labelsToEnsure = [
+              { name: 'readiness/filed', color: 'C5DEF5', description: 'Submitted, awaiting validation' },
+              { name: `release/${release}`, color: '0E8A16', description: `${release} release` },
+              { name: `tier/${tier}`, color: tier === 'production' ? '1D76DB' : 'BFD4F2', description: `${tier} tier` },
+            ];
+
+            for (const label of labelsToEnsure) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label,
+                });
+                console.log(`Created label: ${label.name}`);
+              }
+            }
+
+            // Add labels to the issue
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['readiness/filed', `release/${release}`, `tier/${tier}`],
+            });
+
+      - name: Add issue to project board
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            // Find the project
+            const projectQuery = `
+              query($org: String!) {
+                organization(login: $org) {
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      number
+                    }
+                  }
+                }
+              }
+            `;
+
+            const projectResult = await github.graphql(projectQuery, { org: '${{ env.ORG }}' });
+            const project = projectResult.organization.projectsV2.nodes
+              .find(p => p.title === '${{ env.PROJECT_TITLE }}');
+
+            if (!project) {
+              core.setFailed('Project board not found: ${{ env.PROJECT_TITLE }}');
+              return;
+            }
+
+            // Add issue to project
+            const addMutation = `
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                  item { id }
+                }
+              }
+            `;
+
+            const addResult = await github.graphql(addMutation, {
+              projectId: project.id,
+              contentId: context.payload.issue.node_id,
+            });
+
+            const itemId = addResult.addProjectV2ItemById.item.id;
+            core.setOutput('item_id', itemId);
+            core.setOutput('project_id', project.id);
+
+            console.log(`Added issue to project. Item ID: ${itemId}`);
+
+      - name: Set project fields
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            const projectId = '${{ steps.parse.outputs.project_id || '' }}';
+            const itemId = '${{ steps.parse.outputs.item_id || '' }}';
+
+            // Re-fetch project info to get field definitions
+            const fieldsQuery = `
+              query($org: String!) {
+                organization(login: $org) {
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      fields(first: 30) {
+                        nodes {
+                          ... on ProjectV2Field {
+                            id
+                            name
+                            dataType
+                          }
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            dataType
+                            options { id name }
+                          }
+                          ... on ProjectV2IterationField {
+                            id
+                            name
+                            dataType
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const result = await github.graphql(fieldsQuery, { org: '${{ env.ORG }}' });
+            const project = result.organization.projectsV2.nodes
+              .find(p => p.title === '${{ env.PROJECT_TITLE }}');
+
+            if (!project) {
+              core.setFailed('Project not found');
+              return;
+            }
+
+            // Get the item ID from the project
+            const itemsQuery = `
+              query($projectId: ID!, $issueId: ID!) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    items(first: 100) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue {
+                            id
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const itemsResult = await github.graphql(itemsQuery, {
+              projectId: project.id,
+              issueId: context.payload.issue.node_id,
+            });
+
+            const item = itemsResult.node.items.nodes.find(
+              i => i.content && i.content.id === context.payload.issue.node_id
+            );
+
+            if (!item) {
+              console.log('Issue not found on board — may not have been added yet');
+              return;
+            }
+
+            const fields = project.fields.nodes;
+
+            function findField(name) {
+              return fields.find(f => f.name === name);
+            }
+
+            function findOption(field, optionName) {
+              if (!field || !field.options) return null;
+              return field.options.find(o => o.name === optionName);
+            }
+
+            const updateMutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: $value
+                }) {
+                  projectV2Item { id }
+                }
+              }
+            `;
+
+            const repo = '${{ steps.parse.outputs.repo }}';
+            const tier = '${{ steps.parse.outputs.tier }}';
+            const release = '${{ steps.parse.outputs.release }}';
+            const status = '${{ steps.status.outputs.status }}';
+
+            // Set Status
+            const statusField = findField('Status');
+            const statusOption = findOption(statusField, status);
+            if (statusField && statusOption) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: statusField.id,
+                value: { singleSelectOptionId: statusOption.id },
+              });
+              console.log(`Set Status = ${status}`);
+            }
+
+            // Set Release
+            const releaseField = findField('Release');
+            // Find best matching release option
+            const releaseOption = releaseField?.options?.find(o => o.name.startsWith(release));
+            if (releaseField && releaseOption) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: releaseField.id,
+                value: { singleSelectOptionId: releaseOption.id },
+              });
+              console.log(`Set Release = ${releaseOption.name}`);
+            }
+
+            // Set Repo
+            const repoField = findField('Repo');
+            const repoOption = findOption(repoField, repo);
+            if (repoField && repoOption) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: repoField.id,
+                value: { singleSelectOptionId: repoOption.id },
+              });
+              console.log(`Set Repo = ${repo}`);
+            }
+
+            // Set Repo Tier
+            const tierField = findField('Repo Tier');
+            const tierOption = findOption(tierField, tier);
+            if (tierField && tierOption) {
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: tierField.id,
+                value: { singleSelectOptionId: tierOption.id },
+              });
+              console.log(`Set Repo Tier = ${tier}`);
+            }
+
+            // Set Validation Status = pending on new issues
+            if ('${{ github.event.action }}' === 'opened') {
+              const valStatusField = findField('Validation Status');
+              const pendingOption = findOption(valStatusField, 'pending');
+              if (valStatusField && pendingOption) {
+                await github.graphql(updateMutation, {
+                  projectId: project.id,
+                  itemId: item.id,
+                  fieldId: valStatusField.id,
+                  value: { singleSelectOptionId: pendingOption.id },
+                });
+                console.log('Set Validation Status = pending');
+              }
+            }
+
+            // Set Filed Date
+            const filedDateField = findField('Filed Date');
+            if (filedDateField) {
+              const filedDate = context.payload.issue.created_at.split('T')[0];
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: filedDateField.id,
+                value: { date: filedDate },
+              });
+              console.log(`Set Filed Date = ${filedDate}`);
+            }
+
+            // Set Target Date (1st of release month)
+            const targetDateField = findField('Target Date');
+            if (targetDateField && release) {
+              // release = "v0.7" → May 2026, "v0.8" → Jun 2026, etc.
+              // v0.7 = May 2026 (month 5), v0.8 = Jun 2026 (month 6), ...
+              // Base: v0.7 = 2026-05-01
+              const minor = parseInt(release.split('.')[1], 10);
+              const baseMinor = 7;
+              const baseMonth = 5;
+              const baseYear = 2026;
+              const monthOffset = minor - baseMinor;
+              const targetMonth = baseMonth + monthOffset;
+              const targetYear = baseYear + Math.floor((targetMonth - 1) / 12);
+              const targetMonthNorm = ((targetMonth - 1) % 12) + 1;
+              const targetDate = `${targetYear}-${String(targetMonthNorm).padStart(2, '0')}-01`;
+
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: targetDateField.id,
+                value: { date: targetDate },
+              });
+              console.log(`Set Target Date = ${targetDate}`);
+            }
+
+            console.log('Board sync complete');

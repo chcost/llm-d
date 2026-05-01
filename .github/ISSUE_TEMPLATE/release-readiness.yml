@@ -1,0 +1,287 @@
+name: "Release Readiness Request"
+description: "Request your repository's inclusion in the next llm-d release"
+title: "[Release Readiness] {repo} — {version}"
+labels:
+  - release-readiness
+body:
+  # ── Identity ──────────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## Repository Identity
+
+        Tell us which repo is requesting release inclusion and what version you're targeting.
+        The release team uses this to coordinate cross-repo dependencies and build the release manifest.
+
+  - type: dropdown
+    id: repo
+    attributes:
+      label: Which repo is requesting release inclusion?
+      description: >
+        Select the repository you want included in the next llm-d release.
+        The validation workflow will run automated checks against this repo as soon as you submit.
+      options:
+        - llm-d
+        - llm-d-benchmark
+        - llm-d-inference-payload-processor
+        - llm-d-inference-scheduler
+        - llm-d-inference-sim
+        - llm-d-kv-cache
+        - llm-d-latency-predictor
+        - llm-d-model-service
+        - llm-d-pd-utils
+        - llm-d-prism
+        - llm-d-routing-sidecar
+        - llm-d-workload-variant-autoscaler
+        - batch-gateway (incubation)
+        - coordinator (incubation)
+        - hermes (incubation)
+        - ig-wva (incubation)
+        - llm-d-async (incubation)
+        - llm-d-fast-model-actuation (incubation)
+        - llm-d-modelservice (incubation)
+        - llm-d-planner (incubation)
+        - llm-d-resiliency-operator (incubation)
+        - llm-d-rl (incubation)
+        - llm-d-skills (incubation)
+        - py-inference-scheduler (incubation)
+        - secure-inference (incubation)
+        - weight-propagation-interface (incubation)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: What version/tag are you releasing?
+      description: >
+        Enter the exact semver tag you plan to release (e.g., `v0.8.0`, `v1.0.0-rc.1`).
+        The workflow will validate that this follows the org's `vX.Y.Z` naming convention
+        and that RC tags use lowercase `-rc.N` format. Release type (major/minor/patch/RC)
+        is inferred from the version — no separate field needed.
+      placeholder: "v0.8.0"
+    validations:
+      required: true
+
+  # ── Prerequisites ─────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## Prerequisites
+
+        These questions confirm that your change has community support and has been tested.
+        The release team reviews these answers to decide whether the change is ready for inclusion.
+
+  - type: dropdown
+    id: maintainer_approval
+    attributes:
+      label: Do maintainers want your change?
+      description: >
+        Has at least one repo maintainer (listed in OWNERS) reviewed and approved the PR(s)
+        that make up this release? The workflow will check for `lgtm` and `approved` labels
+        on recent merged PRs. If maintainers haven't reviewed, the release team may block inclusion.
+      options:
+        - "Yes — PRs have lgtm + approved"
+        - "Partially — some PRs still need review"
+        - "No — requesting expedited review"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests_run
+    attributes:
+      label: What tests have you run on your feature?
+      description: >
+        Describe the testing you've done — unit tests, integration tests, manual validation,
+        performance benchmarks, etc. Tests must be easily reproducible by the community.
+        The release team needs confidence that your change won't break other components.
+        Include links to CI runs or test reports if available.
+      placeholder: |
+        - Unit tests: all passing (link to CI run)
+        - Integration tests: tested against inference-scheduler v0.8.0
+        - Manual validation: deployed to staging cluster, ran 100 inference requests
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware_guides
+    attributes:
+      label: What hardware / guides are affected by this change?
+      description: >
+        List any specific hardware platforms (GPU types, accelerators) or deployment guides
+        that your change touches. The release team uses this to schedule hardware-specific
+        validation and update documentation. If none, write "N/A".
+      placeholder: |
+        - NVIDIA A100/H100 (CUDA 12.x)
+        - Guide: "Getting Started with vLLM on OpenShift"
+    validations:
+      required: true
+
+  # ── Documentation ─────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## Documentation
+
+        Documentation gaps are the #1 source of post-release support burden.
+        The release team will block inclusion if affected guides haven't been updated.
+
+  - type: dropdown
+    id: guides_tested
+    attributes:
+      label: Have affected guides been tested on target platform?
+      description: >
+        If your change affects any deployment guide (install steps, config options, CLI flags),
+        have you actually walked through the guide end-to-end on the target hardware?
+        "Tested" means you followed the guide from scratch and it works — not just that CI passed.
+      options:
+        - "Yes — tested end-to-end on target platform"
+        - "Partially — some guides still need testing"
+        - "No guides affected"
+        - "No — guides need updating before release"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: docs_current
+    attributes:
+      label: Are docs up to date with code changes?
+      description: >
+        Have you updated README, API docs, configuration references, and any affected guides
+        to reflect your changes? The workflow will cross-reference your repo name against
+        the llm-d docs site to identify which guides mention your component.
+      options:
+        - "Yes — all docs updated"
+        - "PR open for doc updates"
+        - "No — docs need updating"
+        - "No docs affected"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: What platforms are affected?
+      description: >
+        Check all hardware platforms your change has been validated on.
+        The release team needs this to know which platform-specific nightly tests to monitor
+        and which hardware labs need to re-validate after your change lands.
+      options:
+        - label: CPU only
+        - label: GPU / CUDA (NVIDIA)
+        - label: Intel Gaudi
+        - label: Intel XPU
+        - label: Google TPU
+        - label: AMD ROCm
+
+  # ── Risk Assessment ───────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## Risk Assessment
+
+        Help the release team understand what could go wrong.
+        Be honest — hidden risk discovered post-release is far more expensive than a delayed inclusion.
+
+  - type: dropdown
+    id: breaking_changes
+    attributes:
+      label: Breaking changes?
+      description: >
+        Does this release include any backward-incompatible changes to APIs, CRD schemas,
+        CLI flags, configuration files, or environment variables? Breaking changes require
+        a migration guide and bump the major or minor version. The release team will reject
+        a patch release that contains breaking changes.
+      options:
+        - "No breaking changes"
+        - "Yes — migration guide included"
+        - "Yes — migration guide needed"
+    validations:
+      required: true
+
+  - type: textarea
+    id: cross_repo_deps
+    attributes:
+      label: Dependencies on other llm-d repos releasing simultaneously?
+      description: >
+        List any repos that MUST release at the same time as yours for the feature to work.
+        Select all that apply. For example, if you added a new API in inference-scheduler
+        that kv-cache depends on, both must ship together. The release team uses this to
+        sequence the release order and identify potential deadlocks.
+      placeholder: |
+        - Requires llm-d-kv-cache >= v0.8.0 (new cache eviction API)
+        - No dependency on other repos
+    validations:
+      required: true
+
+  # ── Attestation ───────────────────────────────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ## Attestation
+
+        These are commitments from the submitter. The release team takes these at face value —
+        inaccurate attestations that cause post-release incidents will be flagged in the retrospective.
+
+  - type: dropdown
+    id: hardware_verified
+    attributes:
+      label: Has the submitter verified the feature works on target hardware?
+      description: >
+        "Verified" means you (or someone on your team) deployed this exact code to real hardware
+        and confirmed it works — not just that CI passed on a simulator. If your repo doesn't
+        require hardware (e.g., pure library/SDK), select "N/A — no hardware required".
+      options:
+        - "Yes — verified on target hardware"
+        - "Partially — some platforms not yet tested"
+        - "No — hardware testing pending"
+        - "N/A — no hardware required"
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback_plan
+    attributes:
+      label: Rollback plan
+      description: >
+        What happens if this release causes a production incident? Describe the specific steps
+        to revert — pin to previous version, feature flag, config change, etc. The release team
+        will not approve inclusion without a concrete rollback strategy. "Revert the PR" is
+        not sufficient — describe how operators in the field can recover.
+      placeholder: |
+        1. Pin to previous version v0.7.1 in Helm values
+        2. No schema migration — rollback is clean
+        3. Feature flag `ENABLE_NEW_SCHEDULER=false` disables new behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: release_notes
+    attributes:
+      label: Release notes draft provided?
+      description: >
+        Have you prepared a draft of the release notes for your component? Release notes should
+        list new features, bug fixes, breaking changes, and deprecations. The workflow will check
+        if a CHANGELOG.md exists and has been updated. Without release notes, users can't evaluate
+        whether to upgrade.
+      options:
+        - "Yes — release notes / CHANGELOG updated"
+        - "Draft in progress"
+        - "No — need help writing release notes"
+    validations:
+      required: true
+
+  # ── Automated Checks (filled by workflow) ─────────────────────────
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        ## Automated Checks
+
+        > **You do not need to fill in anything below this line.**
+        >
+        > A validation workflow runs automatically when you submit this issue.
+        > It checks CI health, governance files, artifact validity, test status,
+        > and release hygiene for the repo you selected above. Results appear
+        > as a comment within a few minutes.
