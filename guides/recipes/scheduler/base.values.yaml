@@ -10,6 +10,6 @@ inferenceExtension:
     # Image override for helm chart version 1.5 and above
     registry: ghcr.io
     repository: llm-d/llm-d-inference-scheduler
-    tag: v0.7.0
+    tag: v0.8.0
   flags:
     v: 2
