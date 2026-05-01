@@ -313,8 +313,8 @@ jobs:
               console.log(`Set Release = ${releaseOption.name}`);
             }
 
-            // Set Repo
-            const repoField = findField('Repo');
+            // Set Target Repo
+            const repoField = findField('Target Repo');
             const repoOption = findOption(repoField, repo);
             if (repoField && repoOption) {
               await github.graphql(updateMutation, {
@@ -323,7 +323,7 @@ jobs:
                 fieldId: repoField.id,
                 value: { singleSelectOptionId: repoOption.id },
               });
-              console.log(`Set Repo = ${repo}`);
+              console.log(`Set Target Repo = ${repo}`);
             }
 
             // Set Repo Tier
