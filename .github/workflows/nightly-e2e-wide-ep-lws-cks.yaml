@@ -33,7 +33,8 @@ jobs:
       required_gpus: 32
       recommended_gpus: 32
       pod_wait_timeout: '35m'
-      pod_readiness_delay: 600
+      pod_readiness_delay: 0
+      gateway_host: 'wide-ep-lws-epp'
       pre_deploy_script: |
         echo "Installing LeaderWorkerSet for wide-ep-lws..."
         if ! kubectl get crd leaderworkersets.leaderworkerset.x-k8s.io &>/dev/null; then
