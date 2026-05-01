@@ -6,7 +6,7 @@ Quick-reference definitions for terms used throughout the llm-d documentation. F
 
 **Aggregated Serving** — The default serving mode where a single Model Server handles both Prefill and Decode for each request, as opposed to Disaggregated Serving.
 
-**Consultant** — An optional sidecar component that the EPP queries for additional scoring signals beyond built-in metrics. Examples include the [Latency Predictor](../architecture/advanced/latency-predictor.md) and the [KV-Cache Indexer](../architecture/advanced/kv-indexer.md).
+**Consultant** — An optional sidecar component that the EPP queries for additional scoring signals beyond built-in metrics. Examples include the [Latency Predictor](../architecture/advanced/latency-predictor.md) and the [KV-Cache Indexer](../architecture/advanced/kv-management/kv-indexer.md).
 
 **Data Parallelism (DP)** — Running independent model replicas on separate GPUs within the same node, each handling different requests for higher aggregate throughput. See [Model Servers](../architecture/core/model-servers.md).
 
@@ -32,13 +32,15 @@ Quick-reference definitions for terms used throughout the llm-d documentation. F
 
 **KV Cache** — Key-value tensor cache storing intermediate attention states during LLM inference. Reusing cached entries for shared prompt prefixes (Prefix Caching) avoids redundant computation and reduces latency. See [Architecture Overview](../architecture/README.md).
 
-**KV-Cache Indexer** — A Consultant component that maintains a globally consistent view of KV-cache block distribution across Model Servers using KV-Events, enabling precise prefix cache-aware routing. See [KV-Cache Indexer](../architecture/advanced/kv-indexer.md).
+**KV-Cache Indexer** — A Consultant component that maintains a globally consistent view of KV-cache block distribution across Model Servers using KV-Events, enabling precise prefix cache-aware routing. See [KV-Cache Indexer](../architecture/advanced/kv-management/kv-indexer.md).
 
 **KV-Events** — Events emitted by Model Servers (via ZeroMQ) when KV-cache blocks are created or evicted. Consumed by the KV-Cache Indexer for real-time cache state tracking.
 
 **Latency Predictor** — A Consultant that uses XGBoost quantile regression models trained on live traffic to predict per-endpoint TTFT and TPOT, enabling SLO-aware routing. See [Latency Predictor](../architecture/advanced/latency-predictor.md).
 
 **llm-d** — A Kubernetes-native distributed inference serving stack that adds intelligent routing, KV Cache-aware routing, Disaggregated Serving, and autoscaling on top of existing Model Servers. See [Introduction](../getting-started/README.md).
+
+**llm-d Router** — The intelligent entry point for inference requests in the llm-d stack. It provides LLM-aware load balancing, request queuing, and policy enforcement. It is composed of two functional parts: the **Proxy** (data plane) and the **Endpoint Picker (EPP)** (control plane). See [llm-d Router](../architecture/core/router/README.md).
 
 **MoE (Mixture of Experts)** — A model architecture where only a subset of "expert" sub-networks activate per token, enabling very large models (e.g., DeepSeek-R1) to run efficiently. llm-d supports MoE serving via Wide Expert Parallelism.
 
@@ -60,7 +62,7 @@ Quick-reference definitions for terms used throughout the llm-d documentation. F
 
 **Tensor Parallelism (TP)** — Sharding model layers across multiple GPUs within a node to serve models that exceed single-GPU memory. See [Model Servers](../architecture/core/model-servers.md).
 
-**Tiered KV Prefix Caching** — Extending Prefix Caching capacity beyond GPU high-bandwidth memory (HBM) by offloading KV Cache entries through a storage hierarchy: HBM, CPU memory, local SSD, and remote filesystem. See [Introduction](../getting-started/README.md).
+**KV Cache Management** — A comprehensive ecosystem for managing and reusing the KV cache across the inference pool. It includes **Prefix-Cache Aware Routing**, **KV-Cache Indexing**, and **KV Offloading** to scale effective cache capacity beyond hardware limits. See [KV Cache Management](../architecture/advanced/kv-management/README.md).
 
 **TPOT (Time Per Output Token)** — The average latency to generate each subsequent token during Decode. A key metric for streaming response quality. See [Architecture Overview](../architecture/README.md).
 

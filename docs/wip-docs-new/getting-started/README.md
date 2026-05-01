@@ -30,26 +30,27 @@ The EPP component uses a pluggable scoring pipeline to route each request to the
 
 This alone can deliver order-of-magnitude latency reductions vs. round-robin baselines.
 
-### Predicted Latency-Based Routing
+### KV Cache Management
 
-An **llm-d Router** capability implemented primarily as an EPP plugin that routes each request to the replica predicted to serve it fastest, using an XGBoost model trained online on live traffic. Optionally enforce per-request SLOs via `x-slo-ttft-ms` / `x-slo-tpot-ms` headers — requests that no replica can meet within budget are shed at admission rather than routed to a guaranteed miss. Useful when workload variance makes queue-depth a poor proxy for true load, or when clients need to express interactive vs. batch latency budgets.
+A comprehensive ecosystem for managing and reusing the KV cache across the inference pool. This includes:
+
+- **Prefix-Cache Aware Routing** — The **llm-d Router** (via the EPP) routes requests to replicas that already contain relevant KV-cache entries, eliminating redundant prefill computation and reducing latency.
+- **KV-Cache Indexing** — Maintains a real-time, globally consistent view of exactly which token blocks reside on which model server replicas using high-frequency event tracking.
+- **KV Offloading** — Extends cache capacity beyond accelerator HBM by offloading KV-cache entries through a storage hierarchy (CPU memory, local SSD).
+
+By composing these layers, llm-d allows an inference pool to scale its effective cache capacity far beyond physical hardware limits.
 
 ### Prefill/Decode Disaggregation
 
 Split inference into dedicated **prefill workers** (prompt processing) and **decode workers** (token generation) to reduce time-to-first-token (TTFT) and achieve more predictable time-per-output-token (TPOT). KV-cache is transferred between phases via [NIXL](https://github.com/ai-dynamo/nixl) over high-speed interconnects (InfiniBand, RoCE RDMA).
 
+### Predicted Latency-Based Routing
+
+An **llm-d Router** capability implemented primarily as an EPP plugin that routes each request to the replica predicted to serve it fastest, using an XGBoost model trained online on live traffic to predict ITL and TTFT. Optionally enforce per-request SLOs via `x-slo-ttft-ms` / `x-slo-tpot-ms` headers — requests that no replica can meet within budget are shed at admission rather than routed to a guaranteed miss. Useful when workload variance makes queue-depth a poor proxy for true load, or when clients need to express interactive vs. batch latency budgets.
+
 ### Wide Expert-Parallelism
 
 Deploy large Mixture-of-Experts models like DeepSeek-R1 across multiple nodes using combined Data Parallelism and Expert Parallelism deployments. This deployment pattern maximizes KV cache space for large models, enabling long-context online serving and high-throughput generation for batch and RL use cases.
-
-### Tiered KV Prefix Caching
-
-Extend prefix cache capacity beyond accelerator HBM by offloading KV-cache entries through a configurable storage hierarchy:
-
-- **Accelerator HBM** — fastest, limited capacity
-- **CPU memory** — fast transfer, larger capacity
-- **Local SSD** — cost-effective, higher latency
-- **Remote filesystem** — durable, shareable across replicas (in progress)
 
 ### Workload Autoscaling
 
