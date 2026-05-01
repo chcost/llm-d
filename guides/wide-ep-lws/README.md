@@ -185,10 +185,10 @@ The benchmark launches a pod (`llmdbench-harness-launcher`) that uses `inference
 
 - Download the benchmark script:
 
-  ```bash
-  curl -L -O https://raw.githubusercontent.com/llm-d/llm-d-benchmark/main/existing_stack/run_only.sh
-  chmod u+x run_only.sh
-  ```
+```bash
+curl -L -O https://raw.githubusercontent.com/llm-d/llm-d-benchmark/main/existing_stack/run_only.sh
+chmod u+x run_only.sh
+```
 
 ### 2. Download the Workload Template
 
