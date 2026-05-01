@@ -10,14 +10,6 @@ on:
     - cron: '0 7 * * *'  # 07:00 UTC daily (staggered from IS/PD CKS)
   workflow_dispatch:
     inputs:
-      gateway_type:
-        description: 'Gateway provider type'
-        required: false
-        default: 'istio'
-        type: choice
-        options:
-          - istio
-          - kgateway
       skip_cleanup:
         description: 'Skip cleanup after tests (for debugging)'
         required: false
