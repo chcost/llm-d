@@ -33,7 +33,7 @@ These [guides](./guides/README.md) provide tested and benchmarked recipes and He
 We recommend new users start with a deployment of [optimized baseline](./guides/optimized-baseline/README.md).
 
 > [!NOTE]
-> We are currently revamping our documentation. You can also preview [our new quickstarts](./docs/wip-docs-new/getting-started/quickstart.md), which will be formally released soon.
+> We are currently revamping our documentation. You can also preview [our new quickstarts](./docs/getting-started/quickstart.md), which will be formally released soon.
 
 ### Latest News 🔥
 
