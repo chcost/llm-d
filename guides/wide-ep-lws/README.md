@@ -195,13 +195,13 @@ chmod u+x run_only.sh
 The template is located at `guides/wide-ep-lws/benchmark-templates/guide.yaml`. You can also download it if needed:
 
 ```bash
-curl -LJO "https://raw.githubusercontent.com/llm-d/llm-d/main/guides/${GUIDE_NAME}/benchmark-templates/guide.yaml"
+curl -LJO "https://raw.githubusercontent.com/llm-d/llm-d/main/guides/${GUIDE_NAME}/benchmark-templates/2048_concurrent_2k_isl_2k_osl.yaml"
 ```
 
 ### 3. Execute Benchmark
 
 ```bash
-envsubst < guide.yaml > config.yaml
+envsubst < 2048_concurrent_2k_isl_2k_osl.yaml > config.yaml
 ./run_only.sh -c config.yaml -o ./results
 ```
 
