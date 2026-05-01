@@ -16,49 +16,60 @@
 |   │   │       ├── scheduling.md
 |   │   │       ├── flow-control.md
 |   │   │       ├── request-handling.md
-|   │   │       └── configuration.md
+|   │   │       ├── configuration.md
+|   │   │       └── datalayer.md
 │   │   ├── inferencepool.md
 │   │   └── model-servers.md
 │   └── advanced
 │       ├── disaggregation
-│       │   └── README.md
+│       │   ├── README.md
+│       │   ├── configuration.md
+│       │   └── operations-vllm.md
 │       ├── kv-management
 │       │   ├── README.md
 │       │   ├── prefix-cache-aware-routing.md
 │       │   ├── kv-indexer.md
 │       │   └── kv-offloader.md
 │       ├── latency-predictor.md
+│       ├── batch
+│       │   ├── README.md
+│       │   ├── batch-gateway.md
+│       │   └── async-processor.md
 │       └── autoscaling
 │          ├── README.md
-│          ├── workload-variant-autoscaling.md
-│          └── igw-hpa.md
-├── well-lit-paths
+│          ├── wva.md
+│          └── hpa-keda.md
+├── guides
 │   ├── README.md
-│   ├── optimized-baseline.md
-│   ├── predicted-latency.md
-│   ├── precise-prefix-cache-aware.md
+│   ├── intelligent-inference-scheduling.md
 │   ├── flow-control.md
-│   ├── prefill-decode-disaggregation.md
+│   ├── kv-cache-management.md
+│   ├── pd-disaggregation.md
 │   ├── wide-expert-parallelism.md
-│   ├── tiered-prefix-cache.md
-│   └── workload-autoscaling.md
+│   ├── predicted-latency.md
+│   ├── workload-autoscaling.md
+│   └── experimental
+│       └── batch-gateway.md
 ├── resources
 │   ├── gateways
 │   │   ├── istio.md
 │   │   ├── gke.md
-│   │   ├── agentgateway.md
+│   │   └── agentgateway.md
 │   ├── configuring-user-facing-apis.md
 │   ├── monitoring
 │   │   ├── metrics.md
 │   │   └── tracing.md
 │   ├── deploying-multiple-models.md
-│   └── rdma-configuration.md
+│   ├── profiling.md
+│   ├── rollout-new-version.md
+│   └── rdma
+│       └── README.md
 └── api-reference
     ├── README.md
     ├── inferencepool.md
     ├── inferenceobjective.md
     ├── inferencemodelrewrite.md
     ├── endpointpickerconfig.md
-    ├── http-headers.md
+    ├── epp-http-headers.md
     └── glossary.md
 ```
