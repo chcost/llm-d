@@ -179,7 +179,7 @@ curl -X POST http://${IP}/v1/completions \
 
 ## Benchmarking
 
-The benchmark launches a pod (`llmdbench-harness-launcher`) that uses `inference-perf` with a template workload. The results will be saved to a local folder by using the `-o` flag of `run_only.sh`.
+The benchmark launches a pod (`llmdbench-harness-launcher`) that, in this case, uses `inference-perf` with a synthetic random batch workload workload named `2048_concurrent_2k_isl_2k_osl`. For more details, refer to the [benchmark instructions doc](../../helpers/benchmark.md).
 
 ### 1. Prepare the Benchmarking Suite
 
@@ -216,19 +216,15 @@ kubectl delete -n ${NAMESPACE} -k guides/${GUIDE_NAME}/modelserver/<gke|coreweav
 
 ## Benchmarking Report
 
-We deployed the default wide-ep-lws user guide on CKS (`modelserver/coreweave`).
-
+The benchmark is running on:
 * Provider: CKS
 * Prefill: 1 instance with EP=16
 * Decode: 1 instance with EP=16
 * 4 H200 VMs, 32 GPUs, Infiniband
 
-We use the [inference-perf](https://github.com/kubernetes-sigs/inference-perf/tree/main) benchmark tool to generate random datasets with 1K input length and 1K output length. This benchmark targets batch use case and we aim to find the maximum throughput by sweeping from lower to higher request rates up to 250 QPS.
-
-### Results
 
 <details>
-<summary><b><i>Click</i></b> here to view the report for 2048 concurrent requests from the above example</summary>
+<summary><b><i>Click</i></b> here to view the report from the above example</summary>
 
 ```yaml
 results:
