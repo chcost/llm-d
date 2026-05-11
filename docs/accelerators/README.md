@@ -6,15 +6,15 @@ llm-d supports multiple accelerator vendors and we are expanding our coverage.
 
 Maintainers for each accelerator type are listed below. See our well-lit path guides for details of deploying on each hardware type.
 
-| Vendor | Models | Maintainers | Supported Well-lit Paths |
-| --- | --- | --- | --- |
-| AMD | ROCm | Kenny Roche (<Kenny.Roche@amd.com>), Vincent Cave (<Vincent.Cave@amd.com>) | [optimized baseline](../well-lit-paths/optimized-baseline.md), [Prefill/Decode Disaggregation](../well-lit-paths/pd-disaggregation.md) |
-| CPU | x86_64 | Hongming Zheng (@ZhengHongming888, <hongming.zheng@intel.com>) | [optimized baseline](../well-lit-paths/optimized-baseline.md) |
-| Google | [TPU](../infra-providers/gke/README.md#llm-d-on-google-kubernetes-engine-gke) | Edwin Hernandez (@Edwinhr716), Cong Liu (@liu-cong, <congliu.thu@gmail.com>) | [optimized baseline](../well-lit-paths/optimized-baseline.md), [Prefill/Decode Disaggregation](../well-lit-paths/pd-disaggregation.md) |
-| Intel | XPU | Yuan Wu (@yuanwu2017, <yuan.wu@intel.com>) | [optimized baseline](../well-lit-paths/optimized-baseline.md), [Prefill/Decode Disaggregation](../well-lit-paths/pd-disaggregation.md) |
-| Intel | HPU | Sakari Poussa (@poussa, <sakari.poussa@intel.com>) | [optimized baseline](../well-lit-paths/optimized-baseline.md) |
-| NVIDIA | GPU | Will Eaton (<weaton@redhat.com>), Greg (<grpereir@redhat.com>) | All |
-| Rebellions | NPU | Jinmoo Seok (@rebel-jinmoo, <jinmoo_seok@rebellions.ai>), Minwook Ahn (@rebel-minwook, <minwook.ahn@rebellions.ai>) | [optimized baseline](../well-lit-paths/optimized-baseline.md) |
+| Vendor | Models | Maintainers |
+| --- | --- | --- |
+| AMD | ROCm | Kenny Roche (<Kenny.Roche@amd.com>), Vincent Cave (<Vincent.Cave@amd.com>) |
+| CPU | x86_64 | Hongming Zheng (@ZhengHongming888, <hongming.zheng@intel.com>) |
+| Google | [TPU](../infra-providers/gke/README.md#llm-d-on-google-kubernetes-engine-gke) | Edwin Hernandez (@Edwinhr716), Cong Liu (@liu-cong, <congliu.thu@gmail.com>) |
+| Intel | XPU | Yuan Wu (@yuanwu2017, <yuan.wu@intel.com>) |
+| Intel | HPU | Sakari Poussa (@poussa, <sakari.poussa@intel.com>) |
+| NVIDIA | GPU | Will Eaton (<weaton@redhat.com>), Greg (<grpereir@redhat.com>) |
+| Rebellions | NPU | Jinmoo Seok (@rebel-jinmoo, <jinmoo_seok@rebellions.ai>), Minwook Ahn (@rebel-minwook, <minwook.ahn@rebellions.ai>) |
 
 ## Requirements
 
