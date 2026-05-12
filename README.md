@@ -37,7 +37,7 @@ Validated performance gains from production deployments and partner benchmarks:
 - **3x higher output throughput** and **2x faster TTFT** with prefix-cache-aware routing vs round-robin — Llama 3.1 70B on 4× AMD MI300X, Tesla / Red Hat ([blog](https://llm-d.ai/blog/production-grade-llm-inference-at-scale-kserve-llm-d-vllm))
 - **40% reduction in TTFT and ITL** with predicted-latency scheduling vs heuristics on NVIDIA GPUs, Google ([blog](https://llm-d.ai/blog/predicted-latency-based-scheduling-for-llms))
 - **Up to 70% higher tokens/sec** with prefill/decode disaggregation vs standard vLLM — GPT-OSS on NVIDIA B200 (p6-b200), AWS ([blog](https://aws.amazon.com/blogs/machine-learning/introducing-disaggregated-inference-on-aws-powered-by-llm-d/))
-- **10–30% throughput improvement** with disaggregated serving on identical infrastructure — GPT-OSS-120B and Llama 3.3 70B on AMD MI300X, Oracle / AMD ([blog](https://blogs.oracle.com/ai-and-datascience/llm-inference-at-scale-with-llm-d-on-oci))
+- **10–30% throughput improvement** with disaggregated serving on identical infrastructure — GPT-OSS-120B and Llama 3.3 70B on AMD MI300X, Oracle ([blog](https://blogs.oracle.com/ai-and-datascience/llm-inference-at-scale-with-llm-d-on-oci))
 - **50k tokens/sec** cluster throughput with Wide Expert-Parallelism — 16×16 NVIDIA B200, ~3.1k tok/s per GPU ([blog](https://llm-d.ai/blog/llm-d-v0.5-sustaining-performance-at-scale))
 - **13.9x throughput improvement** with hierarchical KV offloading at 250 concurrent users vs GPU-only — 4× NVIDIA H100 ([blog](https://llm-d.ai/blog/llm-d-v0.5-sustaining-performance-at-scale))
 
