@@ -75,15 +75,12 @@ minikube/kind cluster setup. Testing routing logic changes requires pod
 restarts, image builds, and manifest updates. Inner-loop feedback is measured in
 minutes, not seconds.
 
-Benchmark platform requirements create additional friction. SemiAnalysis
-InferenceMax uses Slurm-based standardized benchmarking for AI inference stacks,
-requiring clean integration without Kubernetes control plane. Clean performance
-evaluation requires infrastructure-neutral deployment to isolate routing
-intelligence from orchestration overhead.
+Benchmark platform requirements create additional friction. Some standardized 
+benchmarking  for AI inference stacks requires clean integration without 
+Kubernetes control plane. Clean performance evaluation requires 
+infrastructure-neutral deployment to isolate routing intelligence from 
+orchestration overhead.
 
-CI/CD testing faces resource limits. GitHub Actions runners make full Kubernetes
-cluster tests slow and expensive. Integration tests need fast feedback, but
-spinning up K3s adds 30-60s per test.
 
 ### Goals
 
@@ -180,10 +177,10 @@ library into their veRL training loop. The controller provides weight sync via
 NCCL, session affinity for KV-cache reuse, and load-aware routing without
 requiring Kubernetes.
 
-#### Story 2: Benchmark engineer validating llm-d on InferenceMax
+#### Story 2: Benchmark engineer validating llm-d on Slurm environment
 
 A benchmark engineer needs to compare llm-d routing intelligence against native
-vLLM on SemiAnalysis InferenceMax platform. They deploy the EPP with file-based
+vLLM. They deploy the EPP with file-based
 discovery on the Slurm-managed cluster, run the standardized benchmark suite,
 and publish results showing llm-d's KV-cache-aware routing improvements. The
 infrastructure-neutral deployment ensures the comparison isolates routing value
@@ -358,7 +355,7 @@ rather than minutes.
 
 ### Strategic impact
 
-#### Market expansion
+#### Community expansion
 
 Current addressable community (Kubernetes-only):
 - Cloud-native AI platforms (AWS SageMaker, GCP Vertex AI, Azure ML)
