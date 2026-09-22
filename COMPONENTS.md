@@ -86,6 +86,8 @@ path. The roster below is the source of truth and changes by pull request.
 | `llm-d-routing-sidecar` | Prefill/decode routing sidecar |
 | `llm-d-async` | Asynchronous processor and queue orchestration for the gateway |
 | `llm-d-batch-gateway` | OpenAI-compatible batch API and processing engine |
+| `llm-d-latency-predictor` | Predicted-latency scoring for live scheduling |
+| `llm-d-workload-variant-autoscaler` | KEDA + EPP autoscaling of serving capacity |
 
 ### Ecosystem
 
@@ -98,12 +100,3 @@ path. The roster below is the source of truth and changes by pull request.
 | `llm-d-inference-cost` | Inference cost analysis |
 | `hermes` | Cluster configuration scanning and self-test generation |
 | `llm-d-semantic-classifier` | Request semantic classification |
-
-### Still deciding
-
-A couple of components sit close to the line, and the project maintainers will
-settle their role:
-
-- `llm-d-latency-predictor` feeds live scheduling scores but is opt-in.
-- the KEDA + EPP autoscaling path runs as a control loop that affects live
-  capacity without sitting inline in a single request.
