@@ -62,7 +62,7 @@ need to grow its maintainer base before it could become core. Promoting an
 ecosystem component to core follows the same pull-request path, measured against
 the core bar.
 
-We review the roster at least once a year. A component that has stopped meeting
+We review the roster frequently. A component that has stopped meeting
 its bar can move to ecosystem or be archived. This is ordinary upkeep, and it
 keeps the core set honest.
 
