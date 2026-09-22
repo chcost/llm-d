@@ -1,48 +1,46 @@
 # Components
 
 llm-d is built as a set of components that connect at API boundaries (see the
-principles in [PROJECT.md](./PROJECT.md)). This document describes how we
-organize those components: where they live, which ones sit on the inference
-path, and how a component becomes a committed part of the project.
-
-## Where components live
-
-We keep code in two GitHub organizations.
-
-Work starts in [`llm-d-incubation`](https://github.com/llm-d-incubation). This is
-where experimental and early components live while we figure out whether they
-earn a lasting place in the project. Incubation code is opt-in and isolated, and
-carries no stability promise.
-
-When the project commits to maintaining a component, it moves into the main
-[`llm-d`](https://github.com/llm-d) organization. We call this graduation, and
-it is a deliberate decision rather than something that happens automatically.
+principles in [PROJECT.md](./PROJECT.md)). This document describes the two
+classes of component the project maintains, and how a component in incubation
+becomes one of them.
 
 ## Core and ecosystem
 
-Not every graduated component plays the same role. Some sit directly on the path
-that serves an inference request; others plan, measure, or operate the system
-around it. We label graduated components accordingly.
+Every component the project commits to is either core or ecosystem. The
+difference is whether it sits on the path that serves an inference request.
 
 A component is **core** if it is on the inference request path - if a well-lit
 path cannot serve requests without it, or if it runs inline in the request or
 data path, so that a failure or regression there degrades or breaks live
-inference.
+inference. The core set is deliberately small, because everything in it carries
+the reliability expectations of production serving.
 
 A component is **ecosystem** if the project maintains it but it is not needed to
 serve a request. Design-time and deploy-time tooling, benchmarking and analysis,
 simulators, and adjacent services are ecosystem components. They are first-class
 parts of llm-d; they simply are not on the hot path.
 
-The two labels are independent of graduation. A component graduates into the
-main org and is labeled core or ecosystem at that point. An ecosystem component
-can later be promoted to core if it moves onto the request path and meets the
-higher bar below.
+The line between them is not permanent. An ecosystem component can be promoted to
+core if it moves onto the request path and meets the higher bar described below.
 
-## What it takes to graduate
+## From incubation to core or ecosystem
 
-Graduating a component means the project is committing to keep it working. Every
-graduated component, core or ecosystem, needs:
+New and experimental work starts in
+[`llm-d-incubation`](https://github.com/llm-d-incubation). Incubation code is
+opt-in and isolated, carries no stability promise, and lives there while we
+figure out whether it earns a lasting place in the project.
+
+When the project commits to maintaining a component, it moves into the main
+[`llm-d`](https://github.com/llm-d) organization and takes on one of the two
+roles above. This is a deliberate decision, not something that happens
+automatically. The maintainers open a pull request naming the role they are
+asking for and showing how the component meets the criteria, and project
+maintainers decide by lazy consensus as described in
+[PROJECT.md](./PROJECT.md#process), with an explicit sign-off given the weight of
+the decision.
+
+Any component the project takes on, core or ecosystem, needs:
 
 - an owning team named in `OWNERS` that commits to maintaining it,
 - documentation for users, and a guide or well-lit path where it makes sense,
@@ -50,9 +48,9 @@ graduated component, core or ecosystem, needs:
 - a real use case or a clear gap it fills, and
 - a sponsoring project maintainer.
 
-Core components carry the reliability expectations of the request path, so they
-clear a higher bar as well. A core component needs more than one active
-maintainer, ideally from more than one organization, because the request path
+Core components clear a higher bar as well, because they inherit the reliability
+expectations of the request path. A core component needs more than one active
+maintainer, ideally from more than one organization, since the request path
 cannot depend on a single person. It ships on the llm-d release train with
 semantic versioning and does not break published APIs (principle #7). And it
 holds a production bar for quality: meaningful test coverage, a security policy
@@ -60,16 +58,9 @@ and contacts, and a high review bar (principle #5).
 
 A small team, including one with a single maintainer, is fine for an ecosystem
 component precisely because it is off the request path. The same component would
-need to grow its maintainer base before it could become core.
-
-## How graduation happens
-
-A component's maintainers open a pull request proposing graduation, naming the
-role they are asking for and showing how the component meets the criteria.
-Project maintainers decide by lazy consensus, as described in
-[PROJECT.md](./PROJECT.md#process), with an explicit sign-off given the weight of
-the decision. Promoting an ecosystem component to core follows the same path
-against the core bar.
+need to grow its maintainer base before it could become core. Promoting an
+ecosystem component to core follows the same pull-request path, measured against
+the core bar.
 
 We review the roster at least once a year. A component that has stopped meeting
 its bar can move to ecosystem or be archived. This is ordinary upkeep, and it
