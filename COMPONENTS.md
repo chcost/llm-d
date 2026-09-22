@@ -1,120 +1,106 @@
-# llm-d Components
+# Components
 
-This document defines how llm-d organizes its components, what it means for a
-component to be part of the project, and how a component moves toward and into
-the project. It complements [PROJECT.md](./PROJECT.md), which defines the
-project's mission, principles, and process.
+llm-d is built as a set of components that connect at API boundaries (see the
+principles in [PROJECT.md](./PROJECT.md)). This document describes how we
+organize those components: where they live, which ones sit on the inference
+path, and how a component becomes a committed part of the project.
 
-## Two questions, two axes
+## Where components live
 
-A component's status answers two independent questions.
+We keep code in two GitHub organizations.
 
-1. **Is the project committed to it?** Reflected by where it lives.
-   - **Incubation** (the [`llm-d-incubation`](https://github.com/llm-d-incubation)
-     org): early or experimental work the project has not yet committed to
-     maintain. Opt-in and isolated (principle #3). No stability promise.
-   - **Graduated** (the [`llm-d`](https://github.com/llm-d) org): the project has
-     committed to maintain it. Graduation is a deliberate step, not a default.
+Work starts in [`llm-d-incubation`](https://github.com/llm-d-incubation). This is
+where experimental and early components live while we figure out whether they
+earn a lasting place in the project. Incubation code is opt-in and isolated, and
+carries no stability promise.
 
-2. **Is it on the inference request path?** Reflected by a role label applied to
-   graduated components.
-   - **Core**: sits inline in serving a live inference request.
-   - **Ecosystem**: a committed, maintained component that plans, measures,
-     operates, or extends llm-d, but is not required inline to serve a request.
+When the project commits to maintaining a component, it moves into the main
+[`llm-d`](https://github.com/llm-d) organization. We call this graduation, and
+it is a deliberate decision rather than something that happens automatically.
 
-These axes are orthogonal. A component graduates from Incubation into the main
-org and is labeled **Core** or **Ecosystem** at that time. A component may later
-be promoted from Ecosystem to Core if it moves onto the request path and clears
-the higher bar.
+## Core and ecosystem
 
-## The critical-path test
+Not every graduated component plays the same role. Some sit directly on the path
+that serves an inference request; others plan, measure, or operate the system
+around it. We label graduated components accordingly.
 
-A component is **Core** if a well-lit path cannot serve inference requests
-without it, or if it sits inline in the request or data path at runtime, such
-that its failure or regression directly degrades or breaks live inference.
+A component is **core** if it is on the inference request path - if a well-lit
+path cannot serve requests without it, or if it runs inline in the request or
+data path, so that a failure or regression there degrades or breaks live
+inference.
 
-A component is **Ecosystem** if it enhances, plans, measures, or operates llm-d
-but is not required inline to serve a request. Design-time and deploy-time
-tools, benchmarking and analysis, simulators, and adjacent services are
-Ecosystem.
+A component is **ecosystem** if the project maintains it but it is not needed to
+serve a request. Design-time and deploy-time tooling, benchmarking and analysis,
+simulators, and adjacent services are ecosystem components. They are first-class
+parts of llm-d; they simply are not on the hot path.
 
-When a component is genuinely on the boundary, for example an opt-in service
-that feeds live scheduling decisions, the project maintainers decide its role
-and record the rationale in the roster below.
+The two labels are independent of graduation. A component graduates into the
+main org and is labeled core or ecosystem at that point. An ecosystem component
+can later be promoted to core if it moves onto the request path and meets the
+higher bar below.
 
-## Graduation criteria
+## What it takes to graduate
 
-Graduation is a commitment by the project to maintain a component. The bar
-depends on the role the component will hold, because a Core component carries
-the reliability expectations of the request path (principle #5) while an
-Ecosystem component does not.
+Graduating a component means the project is committing to keep it working. Every
+graduated component, core or ecosystem, needs:
 
-### Every graduated component (Core or Ecosystem)
+- an owning team named in `OWNERS` that commits to maintaining it,
+- documentation for users, and a guide or well-lit path where it makes sense,
+- working CI, tests, and the standard project linting and sign-off,
+- a real use case or a clear gap it fills, and
+- a sponsoring project maintainer.
 
-- An active owning team named in `OWNERS`, committed to maintenance.
-- A README and user-facing docs; a guide or well-lit path where applicable.
-- Working CI, tests, and standard project linting and PR sign-off.
-- A real use case or a clear strategic gap it fills.
-- A sponsoring project maintainer.
+Core components carry the reliability expectations of the request path, so they
+clear a higher bar as well. A core component needs more than one active
+maintainer, ideally from more than one organization, because the request path
+cannot depend on a single person. It ships on the llm-d release train with
+semantic versioning and does not break published APIs (principle #7). And it
+holds a production bar for quality: meaningful test coverage, a security policy
+and contacts, and a high review bar (principle #5).
 
-### Additional bar for Core
+A small team, including one with a single maintainer, is fine for an ecosystem
+component precisely because it is off the request path. The same component would
+need to grow its maintainer base before it could become core.
 
-- **Bus factor greater than one.** At least two active maintainers, preferably
-  across more than one organization. The request path must not depend on a
-  single person.
-- **Release discipline.** Ships on the llm-d release train with semantic
-  versioning; no breaking changes to published APIs (principle #7).
-- **Reliability and security bar.** Meaningful test coverage, a security policy
-  and contacts, and a high review bar consistent with production code.
+## How graduation happens
 
-An Ecosystem component with a small team, including a bus factor of one, is
-acceptable precisely because it is off the request path. The same component
-would not qualify as Core until it meets the Core bar.
+A component's maintainers open a pull request proposing graduation, naming the
+role they are asking for and showing how the component meets the criteria.
+Project maintainers decide by lazy consensus, as described in
+[PROJECT.md](./PROJECT.md#process), with an explicit sign-off given the weight of
+the decision. Promoting an ecosystem component to core follows the same path
+against the core bar.
 
-## Process
+We review the roster at least once a year. A component that has stopped meeting
+its bar can move to ecosystem or be archived. This is ordinary upkeep, and it
+keeps the core set honest.
 
-- **Proposal.** A component's maintainers open a PR proposing graduation, naming
-  the target role (Core or Ecosystem) and showing how the component meets the
-  relevant criteria.
-- **Decision.** Project maintainers approve by
-  [lazy consensus](https://community.apache.org/committers/decisionMaking.html#lazy-consensus),
-  with explicit sign-off given the significance. Disagreement is resolved per
-  [PROJECT.md](./PROJECT.md#process).
-- **Promotion (Ecosystem to Core).** Same process, evaluated against the Core
-  bar.
-- **Review.** The roster is reviewed at least annually. A component that no
-  longer meets its bar may be moved to a lower state or archived. Demotion and
-  archival are routine hygiene, not a judgment of the people involved.
+## Where status is recorded
 
-## Representation
+Graduated components live in the [`llm-d`](https://github.com/llm-d) org and
+incubation components in
+[`llm-d-incubation`](https://github.com/llm-d-incubation). We tag each graduated
+repo with a `core` or `ecosystem` topic, and the main [README](./README.md)
+groups components by role so anyone can see at a glance what is on their request
+path. The roster below is the source of truth and changes by pull request.
 
-- Graduated components live in the [`llm-d`](https://github.com/llm-d) org;
-  incubation components in
-  [`llm-d-incubation`](https://github.com/llm-d-incubation).
-- Role is recorded with the `core` or `ecosystem` GitHub repo topic and in the
-  roster below.
-- The main [README](./README.md) groups components by role so users can see at a
-  glance what is on their request path.
-
-## Component roster
-
-This roster is the source of truth for component status and is updated by PR
-under the process above.
+## Roster
 
 ### Core
 
 | Component | Purpose |
 |-----------|---------|
-| `llm-d-router` | Intelligent request routing and endpoint picking (EPP / gateway) |
+| `llm-d-router` | Request routing and endpoint picking (EPP / gateway) |
 | `llm-d-kv-cache` | Distributed KV cache scheduling and offloading |
 | `llm-d-routing-sidecar` | Prefill/decode routing sidecar |
-| `llm-d-async` | Asynchronous processor and queue orchestration for the inference gateway |
+| `llm-d-async` | Asynchronous processor and queue orchestration for the gateway |
+| `llm-d-batch-gateway` | OpenAI-compatible batch API and processing engine |
 
 ### Ecosystem
 
 | Component | Purpose |
 |-----------|---------|
-| `llm-d-planner` | Design and deploy-time capacity planning and configuration |
+| `llm-d-planner` | Capacity planning and configuration at design and deploy time |
 | `llm-d-benchmark` | Benchmarking framework and tooling |
 | `llm-d-inference-sim` | GPU-free vLLM simulator |
 | `llm-d-prism` | Performance analysis for distributed inference |
@@ -122,11 +108,11 @@ under the process above.
 | `hermes` | Cluster configuration scanning and self-test generation |
 | `llm-d-semantic-classifier` | Request semantic classification |
 
-### Boundary cases
+### Still deciding
 
-Role recorded with rationale; to be confirmed by the project maintainers.
+A couple of components sit close to the line, and the project maintainers will
+settle their role:
 
-| Component | Proposed role | Rationale |
-|-----------|---------------|-----------|
-| `llm-d-latency-predictor` | Core or Ecosystem (decide) | Feeds live scheduling scores but is opt-in |
-| Autoscaler (KEDA + EPP path) | Ecosystem (decide) | Control loop affecting live capacity, not inline in a single request |
+- `llm-d-latency-predictor` feeds live scheduling scores but is opt-in.
+- the KEDA + EPP autoscaling path runs as a control loop that affects live
+  capacity without sitting inline in a single request.
